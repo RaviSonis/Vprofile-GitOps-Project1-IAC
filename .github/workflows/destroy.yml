@@ -1,25 +1,25 @@
-name: Terraform Destroy (one-off)
+# .github/workflows/destroy.yml
+name: Terraform Destroy (auto on push to `destroy`)
 
 on:
-  workflow_dispatch:
-    inputs:
-      confirm:
-        description: "Type DESTROY to confirm"
-        required: true
-        default: ""
+  push:
+    branches: [ destroy ]   # any push to branch "destroy" will trigger
 
 env:
   AWS_REGION: us-east-1
 
+concurrency:
+  group: destroy-lock
+  cancel-in-progress: false
+
 jobs:
   destroy:
-    if: ${{ github.event.inputs.confirm == 'DESTROY' }}
     runs-on: ubuntu-latest
     defaults:
       run:
         shell: bash
         working-directory: ./terraform
-##
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -34,17 +34,27 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.13.1
+          terraform_version: 1.13.1      # your config allows >=1.6.3,<2.0
           terraform_wrapper: false
 
       - name: Terraform init (use backend from code)
         run: terraform init -reconfigure
 
-      - name: Select workspace (default)
-        run: terraform workspace select default || terraform workspace new default
+      - name: Show workspace
+        run: terraform workspace show || true
 
       - name: Plan destroy
         run: terraform plan -destroy -no-color -input=false -out=destroy.tfplan
 
+      - name: Upload destroy plan (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tf-destroy-plan
+          path: terraform/destroy.tfplan
+
       - name: Apply destroy
-        run: terraform apply -input=false -auto
+        run: terraform apply -input=false -auto-approve -parallelism=1 destroy.tfplan
+
+      - name: Show remaining state
+        run: terraform state list || echo "No resources left in state."
