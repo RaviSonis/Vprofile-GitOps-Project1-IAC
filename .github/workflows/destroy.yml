@@ -1,0 +1,44 @@
+name: Vprofile IAC Destroy
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type DESTROY to confirm
+        required: true
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  destroy:
+    if: github.event.inputs.confirm == 'DESTROY'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./terraform
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+          terraform_version: 1.13.1   # or 1.6.3; your config allows 1.x
+
+      - name: Terraform init (use backend from code)
+        run: terraform init -reconfigure
+
+      - name: Show workspace
+        run: terraform workspace show
+
+      - name: Destroy all
+        run: terraform destroy -auto-approve -parallelism=1
