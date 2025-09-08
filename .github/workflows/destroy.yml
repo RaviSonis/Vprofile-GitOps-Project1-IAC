@@ -1,10 +1,23 @@
-name: Vprofile IAC Destroy
+name: Terraform Destroy (one-off)
+
 on:
   workflow_dispatch:
     inputs:
       confirm:
         description: Type DESTROY to confirm
         required: true
+      workspace:
+        description: Terraform workspace to destroy (default: default)
+        required: false
+        default: default
+      tf_version:
+        description: Terraform version to use (default: 1.13.1)
+        required: false
+        default: 1.13.1
+      parallelism:
+        description: terraform destroy parallelism (default: 1)
+        required: false
+        default: "1"
 
 env:
   AWS_REGION: us-east-1
@@ -17,11 +30,12 @@ jobs:
       run:
         shell: bash
         working-directory: ./terraform
+
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Configure AWS
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -31,14 +45,24 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
+          terraform_version: ${{ github.event.inputs.tf_version }}
           terraform_wrapper: false
-          terraform_version: 1.13.1   # or 1.6.3; your config allows 1.x
 
       - name: Terraform init (use backend from code)
         run: terraform init -reconfigure
 
-      - name: Show workspace
-        run: terraform workspace show
+      - name: Select workspace
+        run: |
+          WS="${{ github.event.inputs.workspace }}"
+          terraform workspace list
+          terraform workspace select "$WS" || terraform workspace new "$WS"
+          echo "Using workspace: $(terraform workspace show)"
 
-      - name: Destroy all
-        run: terraform destroy -auto-approve -parallelism=1
+      - name: Plan destroy
+        run: terraform plan -destroy -no-color -input=false -out=destroy.tfplan
+
+      - name: Apply destroy
+        run: terraform apply -input=false -auto-approve -parallelism=${{ github.event.inputs.parallelism }} destroy.tfplan
+
+      - name: Show remaining state
+        run: terraform state list || echo "No resources left in state."
