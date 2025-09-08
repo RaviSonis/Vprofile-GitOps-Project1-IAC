@@ -3,7 +3,7 @@ name: Terraform Destroy (auto on push to `destroy`)
 
 on:
   push:
-    branches: [ stage ]   # any push to branch "destroy" will trigger
+    branches: [ stage ]   
 
 env:
   AWS_REGION: us-east-1
