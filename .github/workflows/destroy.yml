@@ -4,27 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: Type DESTROY to confirm
+        description: "Type DESTROY to confirm"
         required: true
-      workspace:
-        description: Terraform workspace to destroy (default: default)
-        required: false
-        default: default
-      tf_version:
-        description: Terraform version to use (default: 1.13.1)
-        required: false
-        default: 1.13.1
-      parallelism:
-        description: terraform destroy parallelism (default: 1)
-        required: false
-        default: "1"
-##
+        default: ""
+
 env:
   AWS_REGION: us-east-1
 
 jobs:
   destroy:
-    if: github.event.inputs.confirm == 'DESTROY'
+    if: ${{ github.event.inputs.confirm == 'DESTROY' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -45,24 +34,17 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: ${{ github.event.inputs.tf_version }}
+          terraform_version: 1.13.1
           terraform_wrapper: false
 
       - name: Terraform init (use backend from code)
         run: terraform init -reconfigure
 
-      - name: Select workspace
-        run: |
-          WS="${{ github.event.inputs.workspace }}"
-          terraform workspace list
-          terraform workspace select "$WS" || terraform workspace new "$WS"
-          echo "Using workspace: $(terraform workspace show)"
+      - name: Select workspace (default)
+        run: terraform workspace select default || terraform workspace new default
 
       - name: Plan destroy
         run: terraform plan -destroy -no-color -input=false -out=destroy.tfplan
 
       - name: Apply destroy
-        run: terraform apply -input=false -auto-approve -parallelism=${{ github.event.inputs.parallelism }} destroy.tfplan
-
-      - name: Show remaining state
-        run: terraform state list || echo "No resources left in state."
+        run: terraform apply -input=false -auto
