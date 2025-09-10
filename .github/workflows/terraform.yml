@@ -40,7 +40,7 @@ jobs:
         #   terraform init -reconfigure \
         #     -backend-config="bucket=$(printf '%s' '${{ secrets.BUCKET_TF_STATE }}' | xargs)" \
         #     -backend-config="region=${{ env.AWS_REGION }}"
-
+##
       - name: Terraform Format
         id: fmt
         run: terraform fmt -check
