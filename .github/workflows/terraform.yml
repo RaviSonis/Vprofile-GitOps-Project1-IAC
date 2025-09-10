@@ -1,5 +1,4 @@
 name: Vprofile IAC
-
 on:
   push:
     branches: [main, stage]
@@ -9,6 +8,9 @@ on:
     paths: ["terraform/**"]
 
 env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  BUCKET_TF_STATE: ${{ secrets.BUCKET_TF_STATE }}
   AWS_REGION: us-east-1
   EKS_CLUSTER: vprofile-eks
 
@@ -20,29 +22,26 @@ jobs:
       run:
         shell: bash
         working-directory: ./terraform
-    permissions:
-      contents: read
-      id-token: write  # (harmless now; useful if you later switch to OIDC)
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v3
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+      # - name: Configure AWS credentials
+      #   uses: aws-actions/configure-aws-credentials@v3
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.13.1        # your config allows 1.x (>=1.6.3)
-          terraform_wrapper: false
+          terraform_version: 1.6.3       # your config allows 1.x (>=1.6.3)
 
       - name: Terraform Init (use backend from code)
-        run: terraform init -reconfigure
+        id: init
+        run: terraform init -backend-config="bucket=$BUCKET_TF_STATE"
         # If you *must* override the bucket, sanitize it to avoid trailing-space bugs:
         # run: |
         #   terraform init -reconfigure \
@@ -50,32 +49,39 @@ jobs:
         #     -backend-config="region=${{ env.AWS_REGION }}"
 
       - name: Terraform Format
-        run: terraform fmt -recursive -check -diff
+        id: fmt
+        run: terraform fmt -check
 
       - name: Terraform Validate
-        run: terraform validate -no-color
+        id: validate
+        run: terraform validate
 
       - name: Terraform Plan
         id: plan
         run: terraform plan -no-color -input=false -out=planfile
+        continue-on-error: true
 
-      - name: Upload planfile (artifact)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tf-plan
-          path: terraform/planfile
+      - name: Terraform plan status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+      
+      # - name: Upload planfile (artifact)
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: tf-plan
+      #     path: terraform/planfile
 
-      - name: Terraform Apply (main only)
-        id: apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -input=false -auto-approve -parallelism=1 planfile
+      # - name: Terraform Apply (main only)
+      #   id: apply
+      #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      #   run: terraform apply -input=false -auto-approve -parallelism=1 planfile
 
-      - name: Update kubeconfig
-        id: config
-        if: github.ref == 'refs/heads/main' && steps.apply.outcome == 'success'
-        run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+      # - name: Update kubeconfig
+      #   id: config
+      #   if: github.ref == 'refs/heads/main' && steps.apply.outcome == 'success'
+      #   run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
 
-      - name: Install Ingress controller
-        if: github.ref == 'refs/heads/main' && steps.config.outcome == 'success'
-        run: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/aws/deploy.yaml
+      # - name: Install Ingress controller
+      #   if: github.ref == 'refs/heads/main' && steps.config.outcome == 'success'
+      #   run: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/aws/deploy.yaml
